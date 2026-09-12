@@ -18,6 +18,11 @@ from company_analyzer.subscription import SubscriptionManager, PLANS
 
 app = FastAPI(title="Company Analyzer Agent Web", version="1.0.0")
 
+@app.get("/healthz")
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok", "app": "Company Analyzer Agent"}
+
 # Agent and Subscription Manager instances
 agent = CompanyAgent()
 db_path = os.path.join(os.path.dirname(__file__), "..", "subscriptions.db")
