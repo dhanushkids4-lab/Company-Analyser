@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Company Financial & Valuation Analyzer Agent</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Marked for Markdown rendering in chat -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Razorpay Checkout SDK -->
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-[#0b0f19] text-[#e2e8f0] min-h-screen font-sans antialiased selection:bg-cyan-500 selection:text-white">
+
+  <!-- Navigation Bar -->
+  <header class="sticky top-0 z-50 backdrop-blur-md bg-[#0f172a]/90 border-b border-slate-800/80 px-6 py-3.5">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+          <i class="fa-solid fa-chart-line text-white text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            Company Analyzer <span class="text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">Agent v1.0</span>
+          </h1>
+          <p class="text-xs text-slate-400">Institutional-grade financial stats & AI strategic synthesis</p>
+        </div>
+      </div>
+
+      <!-- Center Search Bar -->
+      <div class="w-full md:w-80 relative">
+        <div class="relative flex items-center">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 text-slate-400 text-sm"></i>
+          <input 
+            type="text" 
+            id="searchInput" 
+            placeholder="Search company or ticker (e.g. NVDA, Apple, TCS.NS)..." 
+            class="w-full pl-10 pr-24 py-2 bg-slate-900/90 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
+          >
+          <button 
+            id="searchBtn" 
+            class="absolute right-1.5 px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded-lg transition-all shadow-md flex items-center gap-1.5"
+          >
+            <span>Analyze</span>
+            <i class="fa-solid fa-arrow-right text-[10px]"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Right: Subscription Tier & Pricing Button -->
+      <div class="flex items-center gap-3">
+        <div id="planBadgeContainer" class="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="userPlanBadge" class="text-xs font-bold text-slate-200">Free Tier</span>
+          <span id="userQuotaText" class="text-[11px] text-slate-400 border-l border-slate-700 pl-2">3/3 left</span>
+        </div>
+        <button 
+          onclick="openPricingModal()" 
+          class="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-500/20 transition flex items-center gap-1.5"
+        >
+          <i class="fa-solid fa-crown text-xs"></i>
+          <span>Plans & Pricing</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Quick Pill Badges -->
+    <div class="max-w-7xl mx-auto flex items-center gap-2 mt-3 overflow-x-auto pb-1 text-xs no-scrollbar">
+      <span class="text-slate-500 font-medium whitespace-nowrap"><i class="fa-solid fa-fire text-amber-400 mr-1"></i>Trending:</span>
+      <button class="ticker-pill" data-ticker="NVDA">NVDA</button>
+      <button class="ticker-pill" data-ticker="AAPL">AAPL</button>
+      <button class="ticker-pill" data-ticker="MSFT">MSFT</button>
+      <button class="ticker-pill" data-ticker="GOOG">GOOG</button>
+      <button class="ticker-pill" data-ticker="TSLA">TSLA</button>
+      <button class="ticker-pill" data-ticker="AMZN">AMZN</button>
+      <button class="ticker-pill" data-ticker="TCS.NS">TCS.NS (India)</button>
+      <button class="ticker-pill" data-ticker="RELIANCE.NS">RELIANCE.NS (India)</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+
+    <!-- Quota Alert Banner (Hidden by default) -->
+    <div id="quotaBanner" class="hidden glass-card p-4 rounded-2xl border-l-4 border-l-amber-500 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <i class="fa-solid fa-circle-exclamation text-amber-400 text-xl"></i>
+        <div>
+          <h4 class="text-sm font-bold text-white">Daily Free Analyses Limit Reached</h4>
+          <p class="text-xs text-slate-300">You've used all 3 free analyses for today. Upgrade to Pro for unlimited daily analyses & AI agent Q&A.</p>
+        </div>
+      </div>
+      <button onclick="openPricingModal()" class="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white text-xs font-bold rounded-xl shadow-lg">
+        Upgrade to Pro (₹1,499 / $19)
+      </button>
+    </div>
+
+    <!-- Loading Skeleton Screen -->
+    <div id="loadingState" class="hidden py-20 flex flex-col items-center justify-center space-y-4">
+      <div class="relative">
+        <div class="w-16 h-16 rounded-full border-4 border-slate-800 border-t-cyan-500 animate-spin"></div>
+        <div class="absolute inset-0 flex items-center justify-center">
+          <i class="fa-solid fa-bolt text-cyan-400 text-sm animate-pulse"></i>
+        </div>
+      </div>
+      <p id="loadingMsg" class="text-sm font-medium text-slate-300">Fetching live company fundamentals & computing health score...</p>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="py-20 text-center space-y-4">
+      <div class="w-16 h-16 mx-auto rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-cyan-400 text-2xl shadow-xl">
+        <i class="fa-solid fa-building-columns"></i>
+      </div>
+      <div class="max-w-md mx-auto">
+        <h2 class="text-xl font-bold text-white">Analyze Any Public Company</h2>
+        <p class="text-sm text-slate-400 mt-1">Search any US, Indian, or global company to get real-time valuation multiples, balance sheet solvency, financial trends, and AI investment analysis.</p>
+      </div>
+      <div class="flex justify-center gap-3 pt-2">
+        <button onclick="analyzeTicker('NVDA')" class="px-4 py-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-xl text-xs font-semibold text-white transition flex items-center gap-2">
+          <span>Analyze NVIDIA (NVDA)</span>
+          <i class="fa-solid fa-chevron-right text-[10px]"></i>
+        </button>
+        <button onclick="analyzeTicker('AAPL')" class="px-4 py-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-xl text-xs font-semibold text-white transition flex items-center gap-2">
+          <span>Analyze Apple (AAPL)</span>
+          <i class="fa-solid fa-chevron-right text-[10px]"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Dashboard Content Area (Initially Hidden) -->
+    <div id="dashboard" class="hidden space-y-6">
+
+      <!-- Header Hero Card -->
+      <div class="glass-card p-6 rounded-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div class="space-y-2">
+          <div class="flex items-center gap-3">
+            <h2 id="compName" class="text-2xl font-black tracking-tight text-white">Apple Inc.</h2>
+            <span id="compSymbol" class="px-2.5 py-0.5 rounded-lg bg-cyan-500/10 text-cyan-400 font-mono text-sm font-bold border border-cyan-500/20">AAPL</span>
+            <span id="compExchange" class="text-xs text-slate-400 uppercase tracking-wider font-semibold">NASDAQ</span>
+          </div>
+          <div class="flex items-center gap-3 text-xs text-slate-400">
+            <span id="compSector"><i class="fa-solid fa-layer-group text-slate-500 mr-1.5"></i>Technology</span>
+            <span>•</span>
+            <span id="compIndustry"><i class="fa-solid fa-industry text-slate-500 mr-1.5"></i>Consumer Electronics</span>
+            <span>•</span>
+            <span id="compCountry"><i class="fa-solid fa-globe text-slate-500 mr-1.5"></i>United States</span>
+          </div>
+          <div class="pt-2 flex items-baseline gap-3">
+            <span id="compPrice" class="text-3xl font-extrabold text-emerald-400">$332.27</span>
+            <span class="text-xs text-slate-400">Market Cap: <strong id="compMarketCap" class="text-slate-200">$4.85T</strong></span>
+            <span class="text-xs text-slate-400">EV: <strong id="compEV" class="text-slate-200">$4.87T</strong></span>
+          </div>
+        </div>
+
+        <!-- Right Side: Health Score & Action Buttons -->
+        <div class="flex items-center gap-5 w-full md:w-auto justify-between md:justify-end">
+          <div class="flex items-center gap-4 bg-slate-900/80 border border-slate-800 px-5 py-3 rounded-xl shadow-inner">
+            <div class="text-center">
+              <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Health Score</div>
+              <div class="flex items-center gap-1.5">
+                <span id="healthScore" class="text-3xl font-black text-cyan-400">74</span>
+                <span class="text-xs text-slate-500">/100</span>
+              </div>
+            </div>
+            <div class="h-8 w-px bg-slate-800"></div>
+            <div class="text-center">
+              <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Grade</div>
+              <span id="healthGrade" class="px-2.5 py-0.5 rounded-lg text-sm font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">B+</span>
+            </div>
+          </div>
+
+          <!-- Export Actions -->
+          <div class="flex flex-col gap-1.5">
+            <button onclick="exportReport('html')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition flex items-center gap-1.5">
+              <i class="fa-solid fa-file-arrow-down text-cyan-400"></i> Export HTML
+            </button>
+            <button onclick="exportReport('json')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition flex items-center gap-1.5">
+              <i class="fa-solid fa-code text-amber-400"></i> Export JSON
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="flex border-b border-slate-800 gap-6 text-sm font-medium">
+        <button onclick="switchTab('overview')" id="tab-overview" class="tab-btn active-tab pb-3 flex items-center gap-2">
+          <i class="fa-solid fa-table-cells-large"></i> Overview & Ratios
+        </button>
+        <button onclick="switchTab('charts')" id="tab-charts" class="tab-btn pb-3 flex items-center gap-2 text-slate-400 hover:text-slate-200">
+          <i class="fa-solid fa-chart-column"></i> Multi-Year Trends
+        </button>
+        <button onclick="switchTab('memo')" id="tab-memo" class="tab-btn pb-3 flex items-center gap-2 text-slate-400 hover:text-slate-200">
+          <i class="fa-solid fa-brain"></i> AI Investment Memo
+        </button>
+        <button onclick="switchTab('chat')" id="tab-chat" class="tab-btn pb-3 flex items-center gap-2 text-slate-400 hover:text-slate-200">
+          <i class="fa-solid fa-comments"></i> Ask Agent
+        </button>
+      </div>
+
+      <!-- Tab 1: Overview & Ratios -->
+      <div id="panel-overview" class="space-y-6">
+        <!-- 3-Column Metrics Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+          <!-- Card 1: Valuation Multiples -->
+          <div class="glass-card p-5 rounded-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-scale-balanced text-cyan-400"></i> Valuation Multiples
+              </h3>
+            </div>
+            <div class="space-y-2.5 text-xs">
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Trailing P/E</span><strong id="valTrailingPE" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Forward P/E</span><strong id="valForwardPE" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">PEG Ratio</span><strong id="valPEG" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Price / Sales</span><strong id="valPS" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Price / Book</span><strong id="valPB" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">EV / EBITDA</span><strong id="valEVEBITDA" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1"><span class="text-slate-400">Beta (Volatility)</span><strong id="valBeta" class="text-slate-100 font-mono">-</strong></div>
+            </div>
+          </div>
+
+          <!-- Card 2: Profitability & Returns -->
+          <div class="glass-card p-5 rounded-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-coins text-emerald-400"></i> Profitability & Returns
+              </h3>
+            </div>
+            <div class="space-y-2.5 text-xs">
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Revenue (TTM)</span><strong id="profRevTTM" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Revenue YoY</span><strong id="profRevGrowth" class="text-emerald-400 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Gross Margin</span><strong id="profGrossMargin" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Operating Margin</span><strong id="profOpMargin" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Net Profit Margin</span><strong id="profNetMargin" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Return on Equity (ROE)</span><strong id="profROE" class="text-emerald-400 font-mono">-</strong></div>
+              <div class="flex justify-between py-1"><span class="text-slate-400">Free Cash Flow</span><strong id="profFCF" class="text-slate-100 font-mono">-</strong></div>
+            </div>
+          </div>
+
+          <!-- Card 3: Solvency & Balance Sheet -->
+          <div class="glass-card p-5 rounded-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-shield-halved text-purple-400"></i> Solvency & Balance Sheet
+              </h3>
+            </div>
+            <div class="space-y-2.5 text-xs">
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Total Cash</span><strong id="bsCash" class="text-emerald-400 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Total Debt</span><strong id="bsDebt" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Net Debt</span><strong id="bsNetDebt" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Debt to Equity</span><strong id="bsDebtEquity" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Current Ratio</span><strong id="bsCurrentRatio" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-800/60"><span class="text-slate-400">Dividend Yield</span><strong id="valDivYield" class="text-slate-100 font-mono">-</strong></div>
+              <div class="flex justify-between py-1"><span class="text-slate-400">52W Range</span><strong id="val52WRange" class="text-slate-100 font-mono text-[11px]">-</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Wall Street Consensus Banner -->
+        <div class="glass-card p-5 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 text-xl">
+              <i class="fa-solid fa-bullseye"></i>
+            </div>
+            <div>
+              <div class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Wall Street Consensus</div>
+              <div class="flex items-center gap-2 mt-0.5">
+                <span id="analystRec" class="text-lg font-black text-emerald-400 uppercase">BUY</span>
+                <span id="analystCount" class="text-xs text-slate-500">(39 Analysts)</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-6 text-xs text-slate-300">
+            <div><span class="text-slate-500">Target Mean:</span> <strong id="tgtMean" class="text-white font-mono ml-1">-</strong></div>
+            <div><span class="text-slate-500">Target Low:</span> <strong id="tgtLow" class="text-rose-400 font-mono ml-1">-</strong></div>
+            <div><span class="text-slate-500">Target High:</span> <strong id="tgtHigh" class="text-emerald-400 font-mono ml-1">-</strong></div>
+          </div>
+        </div>
+
+        <!-- Strengths & Risks Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="glass-card p-5 rounded-2xl border-l-4 border-l-emerald-500 space-y-3">
+            <h4 class="text-sm font-bold text-emerald-400 flex items-center gap-2">
+              <i class="fa-solid fa-circle-check"></i> Key Strengths & Competitive Edges
+            </h4>
+            <div id="strengthsList" class="space-y-2 text-xs text-slate-300">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <div class="glass-card p-5 rounded-2xl border-l-4 border-l-rose-500 space-y-3">
+            <h4 class="text-sm font-bold text-rose-400 flex items-center gap-2">
+              <i class="fa-solid fa-triangle-exclamation"></i> Key Risks & Watchpoints
+            </h4>
+            <div id="risksList" class="space-y-2 text-xs text-slate-300">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Multi-Year Trends (Charts) -->
+      <div id="panel-charts" class="hidden space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="glass-card p-5 rounded-2xl space-y-3">
+            <h4 class="text-sm font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-chart-column text-cyan-400"></i> Annual Revenue & Net Income ($)
+            </h4>
+            <div class="h-64">
+              <canvas id="revChart"></canvas>
+            </div>
+          </div>
+
+          <div class="glass-card p-5 rounded-2xl space-y-3">
+            <h4 class="text-sm font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-chart-line text-emerald-400"></i> Operating & Gross Profit Trend ($)
+            </h4>
+            <div class="h-64">
+              <canvas id="profitChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: AI Investment Memo -->
+      <div id="panel-memo" class="hidden space-y-6">
+        <div class="glass-card p-6 rounded-2xl space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-brain text-cyan-400"></i> Agent Strategic Synthesis Memo
+            </h3>
+            <span class="text-xs px-2.5 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">Institutional Mode</span>
+          </div>
+          <div id="memoContent" class="text-sm text-slate-300 leading-relaxed space-y-3 prose prose-invert max-w-none">
+            <!-- Memo rendered here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Interactive Agent Chat -->
+      <div id="panel-chat" class="hidden space-y-4">
+        <!-- Pro Upgrade Lock Overlay for Free Users -->
+        <div id="chatLockOverlay" class="hidden glass-card p-8 rounded-2xl text-center space-y-4">
+          <div class="w-14 h-14 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-2xl">
+            <i class="fa-solid fa-lock"></i>
+          </div>
+          <div class="max-w-md mx-auto">
+            <h3 class="text-lg font-bold text-white">Unlock Interactive AI Agent Q&A</h3>
+            <p class="text-xs text-slate-400 mt-1">Get real-time answers about company debt sustainability, valuation justification, peer analysis, and profit margin breakdowns.</p>
+          </div>
+          <button onclick="openPricingModal()" class="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white text-xs font-bold rounded-xl shadow-lg">
+            Upgrade to Pro Analyst (₹1,499 / $19)
+          </button>
+        </div>
+
+        <div id="chatInterface" class="glass-card p-6 rounded-2xl flex flex-col h-[520px]">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center justify-center">
+                <i class="fa-solid fa-robot text-sm"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-white">Ask Agent About This Company</h3>
+                <p class="text-[11px] text-slate-400">Query valuation, debt ratios, margin sustainability, or peers</p>
+              </div>
+            </div>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">Pro Active</span>
+          </div>
+
+          <!-- Quick Prompts Chips -->
+          <div class="flex items-center gap-2 py-3 overflow-x-auto text-xs no-scrollbar border-b border-slate-800/60">
+            <span class="text-slate-500 whitespace-nowrap">Suggested:</span>
+            <button onclick="askPreset('Is the current valuation justified?')" class="chat-chip">Is valuation justified?</button>
+            <button onclick="askPreset('What are the main balance sheet and debt risks?')" class="chat-chip">Debt & solvency risk?</button>
+            <button onclick="askPreset('Explain profitability margins and ROE.')" class="chat-chip">Profitability & ROE</button>
+            <button onclick="askPreset('Give a 3-bullet executive summary.')" class="chat-chip">3-Bullet Summary</button>
+          </div>
+
+          <!-- Chat Messages Container -->
+          <div id="chatMessages" class="flex-1 overflow-y-auto py-4 space-y-4 pr-2">
+            <!-- Messages inserted here -->
+          </div>
+
+          <!-- Chat Input -->
+          <div class="pt-3 border-t border-slate-800 flex gap-2">
+            <input 
+              type="text" 
+              id="chatInput" 
+              placeholder="Ask anything about this company's statistics, valuation, or risks..." 
+              class="flex-1 px-4 py-2.5 bg-slate-900 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+              onkeydown="if(event.key==='Enter') sendChatMessage()"
+            >
+            <button 
+              onclick="sendChatMessage()" 
+              id="chatSendBtn"
+              class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-xl transition flex items-center gap-2 shadow-lg shadow-cyan-600/20"
+            >
+              <span>Send</span>
+              <i class="fa-solid fa-paper-plane text-[11px]"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Pricing & Subscription Modal -->
+  <div id="pricingModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="glass-card max-w-4xl w-full p-6 md:p-8 rounded-3xl space-y-6 relative border border-slate-700 shadow-2xl my-8">
+      <button onclick="closePricingModal()" class="absolute top-6 right-6 text-slate-400 hover:text-white text-xl">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="text-center space-y-2">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs font-bold uppercase tracking-wider">
+          <i class="fa-solid fa-shield-check"></i>
+          <span>Razorpay & UPI Supported</span>
+        </div>
+        <h2 class="text-2xl md:text-3xl font-black text-white">Upgrade Your Financial Intelligence</h2>
+        <p class="text-xs md:text-sm text-slate-400 max-w-lg mx-auto">Get unlimited fundamental extractions, Wall Street AI memos, interactive charts, and 24/7 Agent Q&A.</p>
+      </div>
+
+      <!-- Currency Switcher Toggle -->
+      <div class="flex justify-center items-center gap-2 text-xs font-bold">
+        <span class="text-slate-400">Currency:</span>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-1 flex items-center gap-1">
+          <button id="currBtnINR" onclick="setPricingCurrency('INR')" class="px-3 py-1 rounded-lg bg-cyan-600 text-white transition">₹ INR (India UPI)</button>
+          <button id="currBtnUSD" onclick="setPricingCurrency('USD')" class="px-3 py-1 rounded-lg text-slate-400 hover:text-white transition">$ USD (Global)</button>
+        </div>
+      </div>
+
+      <!-- 3 Tier Pricing Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+
+        <!-- Free Tier Card -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between space-y-6">
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-base font-bold text-white">Free Tier</h3>
+              <p class="text-xs text-slate-400 mt-0.5">Basic daily company lookup</p>
+            </div>
+            <div class="flex items-baseline gap-1">
+              <span id="priceFree" class="text-3xl font-black text-white">₹0</span>
+              <span class="text-xs text-slate-500">/month</span>
+            </div>
+            <ul class="space-y-2.5 text-xs text-slate-300">
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> 3 analyses per day</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Valuation & solvency ratios</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Health score (0-100)</li>
+              <li class="flex items-center gap-2 text-slate-500"><i class="fa-solid fa-xmark text-slate-600"></i> Interactive AI Agent Chat</li>
+              <li class="flex items-center gap-2 text-slate-500"><i class="fa-solid fa-xmark text-slate-600"></i> Multi-year trend charts</li>
+            </ul>
+          </div>
+          <button onclick="switchPlanDemo('free')" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl border border-slate-700 transition">
+            Current Plan
+          </button>
+        </div>
+
+        <!-- Pro Analyst Card (Featured) -->
+        <div class="bg-gradient-to-b from-slate-900 to-slate-900/90 border-2 border-amber-500 rounded-2xl p-6 flex flex-col justify-between space-y-6 relative shadow-xl shadow-amber-500/10">
+          <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow">
+            Most Popular
+          </div>
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-base font-bold text-white flex items-center gap-1.5">
+                <span>Pro Analyst</span>
+                <i class="fa-solid fa-crown text-amber-400 text-xs"></i>
+              </h3>
+              <p class="text-xs text-slate-400 mt-0.5">For active investors & analysts</p>
+            </div>
+            <div class="flex items-baseline gap-1">
+              <span id="pricePro" class="text-3xl font-black text-white">₹1,499</span>
+              <span class="text-xs text-slate-500">/month</span>
+            </div>
+            <ul class="space-y-2.5 text-xs text-slate-200">
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <strong>Unlimited</strong> analyses / day</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Interactive Agent Q&A Chat</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Multi-year revenue & profit charts</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Full AI Strategic Synthesis Memos</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> HTML, Markdown & JSON exports</li>
+            </ul>
+          </div>
+          <div class="space-y-2">
+            <button onclick="payWithRazorpay('pro')" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-500/20 transition flex items-center justify-center gap-2">
+              <i class="fa-solid fa-bolt"></i>
+              <span>Pay with UPI / Cards (Razorpay)</span>
+            </button>
+            <button onclick="switchPlanDemo('pro')" class="w-full text-[11px] text-amber-400 hover:underline">
+              ⚡ Instant Sandbox Switch (Demo Mode)
+            </button>
+          </div>
+        </div>
+
+        <!-- Enterprise / Institutional Card -->
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between space-y-6">
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-base font-bold text-white">Institutional</h3>
+              <p class="text-xs text-slate-400 mt-0.5">For funds & research teams</p>
+            </div>
+            <div class="flex items-baseline gap-1">
+              <span id="priceEnterprise" class="text-3xl font-black text-white">₹3,999</span>
+              <span class="text-xs text-slate-500">/month</span>
+            </div>
+            <ul class="space-y-2.5 text-xs text-slate-300">
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Everything in Pro Analyst</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Priority LLM inference queue</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> API programmatic access keys</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Custom peer group benchmarks</li>
+              <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> Priority 24/7 dedicated support</li>
+            </ul>
+          </div>
+          <div class="space-y-2">
+            <button onclick="payWithRazorpay('enterprise')" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700 transition flex items-center justify-center gap-2">
+              <i class="fa-solid fa-bolt text-cyan-400"></i>
+              <span>Pay with Razorpay</span>
+            </button>
+            <button onclick="switchPlanDemo('enterprise')" class="w-full text-[11px] text-cyan-400 hover:underline">
+              ⚡ Instant Sandbox Switch (Demo Mode)
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Payment Support Badges -->
+      <div class="pt-2 text-center text-xs text-slate-500 flex flex-wrap items-center justify-center gap-4">
+        <span class="flex items-center gap-1.5"><i class="fa-brands fa-google-pay text-base text-slate-400"></i> Google Pay</span>
+        <span class="flex items-center gap-1.5"><i class="fa-solid fa-mobile-screen-button text-slate-400"></i> PhonePe & Paytm UPI</span>
+        <span class="flex items-center gap-1.5"><i class="fa-solid fa-credit-card text-slate-400"></i> RuPay / Visa / Mastercard</span>
+        <span class="flex items-center gap-1.5"><i class="fa-solid fa-building-columns text-slate-400"></i> 50+ Banks NetBanking</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
