@@ -67,7 +67,12 @@ class CompanyDataFetcher:
         }
 
         # Market & Price
-        current_price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
+      current_price = (
+    fast_info.get("last_price")
+    or info.get("currentPrice")
+    or info.get("regularMarketPrice")
+    or info.get("previousClose")
+)
         price_stats = {
             "current_price": current_price,
             "currency": info.get("currency", "USD"),
