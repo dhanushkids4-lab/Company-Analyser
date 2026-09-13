@@ -1338,7 +1338,10 @@ async def chat_with_agent(
                 f"**Verdict:** "
                 f"{score.get('bear_thesis')}"
                 f"if (val.get('trailing_pe') or 0) > 30 "
-                f"else score.get('bull_thesis')}"
+                elif "valuation" in q_lower or "pe" in q_lower or "expensive" in q_lower or "cheap" in q_lower:
+    ans = f"**Valuation Breakdown for {profile.get('name')} ({profile.get('symbol')}):**\n\n"
+    ans += f"- **Trailing P/E:** {val.get('trailing_pe', 'N/A')}\n"
+    ans += f"-
             )
 
             return {
