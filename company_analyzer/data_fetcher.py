@@ -44,8 +44,13 @@ class CompanyDataFetcher:
         resolved = cls.resolve_ticker(symbol_or_name)
         symbol = resolved.get("symbol", symbol_or_name.upper())
 
-        ticker = yf.Ticker(symbol)
+       ticker = yf.Ticker(symbol)
+
+       try:
         info = ticker.info or {}
+       except Exception as e:
+         print(f"Yahoo Finance info error for {symbol}: {e}")
+         info = {}
 
         # Profile
         profile = {
