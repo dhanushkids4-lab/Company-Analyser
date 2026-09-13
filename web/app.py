@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import html
-from typing import Optional, List
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request, Header
 from fastapi.staticfiles import StaticFiles
@@ -11,28 +11,39 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
 
-# Ensure parent directory is in sys.path
+# ==================================================
+# ENSURE PARENT DIRECTORY IS IN PYTHON PATH
+# ==================================================
+
 sys.path.insert(
     0,
     os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..")
+        os.path.join(
+            os.path.dirname(__file__),
+            ".."
+        )
     )
 )
 
 
+# ==================================================
+# IMPORT PROJECT MODULES
+# ==================================================
+
 from company_analyzer.agent import CompanyAgent
 from company_analyzer.data_fetcher import CompanyDataFetcher
-from company_analyzer.financial_scorer import FinancialScorer
-from company_analyzer.llm_analyzer import LLMAnalyzer
 from company_analyzer.formatter import (
-    ReportFormatter,
     _fmt_large_num,
-    _fmt_curr,
-    _fmt_pct,
-    _fmt_mult,
 )
-from company_analyzer.subscription import SubscriptionManager, PLANS
+from company_analyzer.subscription import (
+    SubscriptionManager,
+    PLANS
+)
 
+
+# ==================================================
+# FASTAPI APP
+# ==================================================
 
 app = FastAPI(
     title="Company Analyzer Agent Web",
@@ -40,9 +51,9 @@ app = FastAPI(
 )
 
 
-# --------------------------------------------------
+# ==================================================
 # HEALTH CHECK
-# --------------------------------------------------
+# ==================================================
 
 @app.get("/healthz")
 @app.get("/api/health")
@@ -53,9 +64,9 @@ async def health_check():
     }
 
 
-# --------------------------------------------------
+# ==================================================
 # AGENT AND SUBSCRIPTION MANAGER
-# --------------------------------------------------
+# ==================================================
 
 agent = CompanyAgent()
 
@@ -70,9 +81,9 @@ sub_manager = SubscriptionManager(
 )
 
 
-# --------------------------------------------------
+# ==================================================
 # STATIC FILES
-# --------------------------------------------------
+# ==================================================
 
 STATIC_DIR = os.path.join(
     os.path.dirname(__file__),
@@ -85,9 +96,9 @@ os.makedirs(
 )
 
 
-# --------------------------------------------------
+# ==================================================
 # REQUEST MODELS
-# --------------------------------------------------
+# ==================================================
 
 class ChatRequest(BaseModel):
     symbol: str
@@ -123,13 +134,12 @@ class RazorpayVerifyRequest(BaseModel):
     razorpay_signature: str
 
 
-# --------------------------------------------------
-# SUBSCRIPTION & PAYMENT ENDPOINTS
-# --------------------------------------------------
+# ==================================================
+# SUBSCRIPTION ENDPOINTS
+# ==================================================
 
 @app.get("/api/subscription/plans")
 async def get_plans():
-    """Returns available subscription tiers and features."""
 
     return {
         "plans": PLANS,
@@ -144,24 +154,20 @@ async def get_plans():
 async def get_subscription_status(
     user_id: str = "default_user"
 ):
-    """Returns the user's subscription tier and daily quota."""
 
-    quota = sub_manager.check_quota(
+    return sub_manager.check_quota(
         user_id
     )
 
-    return quota
 
-
-# --------------------------------------------------
+# ==================================================
 # RAZORPAY ENDPOINTS
-# --------------------------------------------------
+# ==================================================
 
 @app.post("/api/razorpay/create-order")
 async def razorpay_create_order(
     req: RazorpayOrderRequest
 ):
-    """Creates a Razorpay order."""
 
     try:
 
@@ -185,7 +191,6 @@ async def razorpay_create_order(
 async def razorpay_verify_payment(
     req: RazorpayVerifyRequest
 ):
-    """Verifies Razorpay payment signature."""
 
     try:
 
@@ -207,26 +212,25 @@ async def razorpay_verify_payment(
         )
 
 
-# --------------------------------------------------
-# STRIPE / SUBSCRIPTION ENDPOINTS
-# --------------------------------------------------
+# ==================================================
+# STRIPE SUBSCRIPTION ENDPOINTS
+# ==================================================
 
 @app.post("/api/subscription/checkout")
 async def create_checkout(
     req: CheckoutRequest
 ):
-    """Creates a Stripe checkout session."""
 
     try:
 
-        res = sub_manager.create_checkout_session(
+        result = sub_manager.create_checkout_session(
             user_id=req.user_id,
             plan_id=req.plan_id,
             success_url=req.success_url,
             cancel_url=req.cancel_url
         )
 
-        return res
+        return result
 
     except Exception as e:
 
@@ -240,7 +244,6 @@ async def create_checkout(
 async def demo_upgrade(
     req: DemoUpgradeRequest
 ):
-    """Switches subscription tier for testing."""
 
     try:
 
@@ -275,7 +278,6 @@ async def stripe_webhook(
     request: Request,
     stripe_signature: Optional[str] = Header(None)
 ):
-    """Receives Stripe subscription events."""
 
     try:
 
@@ -296,15 +298,17 @@ async def stripe_webhook(
         )
 
 
-# --------------------------------------------------
+# ==================================================
 # COMPANY SEARCH
-# --------------------------------------------------
+# ==================================================
 
 @app.get("/api/search")
 async def search_company(
-    q: str = Query(..., min_length=1)
+    q: str = Query(
+        ...,
+        min_length=1
+    )
 ):
-    """Search for matching company tickers."""
 
     try:
 
@@ -324,17 +328,19 @@ async def search_company(
         )
 
 
-# --------------------------------------------------
+# ==================================================
 # COMPANY ANALYSIS
-# --------------------------------------------------
+# ==================================================
 
 @app.get("/api/analyze")
 async def analyze_company(
-    query: str = Query(..., min_length=1),
+    query: str = Query(
+        ...,
+        min_length=1
+    ),
     user_id: str = "default_user",
     use_llm: bool = True
 ):
-    """Fetches and analyzes company financial data."""
 
     quota = sub_manager.check_quota(
         user_id
@@ -367,16 +373,15 @@ async def analyze_company(
             display=False
         )
 
-        # Record usage only after successful analysis
         sub_manager.record_usage(
             user_id
         )
 
-        updated_quota = sub_manager.check_quota(
-            user_id
+        result["quota"] = (
+            sub_manager.check_quota(
+                user_id
+            )
         )
-
-        result["quota"] = updated_quota
 
         return result
 
@@ -390,42 +395,39 @@ async def analyze_company(
         )
 
 
-# --------------------------------------------------
+# ==================================================
 # EXPORT ANALYSIS
-# --------------------------------------------------
+# ==================================================
 
 @app.get("/api/export")
 async def export_analysis(
-    symbol: str = Query(..., min_length=1),
+    symbol: str = Query(
+        ...,
+        min_length=1
+    ),
     format: str = Query("json")
 ):
-    """
-    Export company analysis as HTML or JSON.
-
-    Examples:
-    /api/export?symbol=NVDA&format=html
-    /api/export?symbol=NVDA&format=json
-    """
 
     try:
 
-        # Fetch fresh analysis data
         result = agent.analyze(
             symbol,
             use_llm=False,
             display=False
         )
 
-        # Convert data into JSON-safe format
         safe_result = jsonable_encoder(
             result
         )
 
-        export_format = format.lower().strip()
+        export_format = (
+            format.lower().strip()
+        )
 
-        # ------------------------------
+
+        # ------------------------------------------
         # JSON EXPORT
-        # ------------------------------
+        # ------------------------------------------
 
         if export_format == "json":
 
@@ -446,9 +448,10 @@ async def export_analysis(
                 }
             )
 
-        # ------------------------------
+
+        # ------------------------------------------
         # HTML EXPORT
-        # ------------------------------
+        # ------------------------------------------
 
         if export_format == "html":
 
@@ -523,29 +526,44 @@ async def export_analysis(
             strengths_html = ""
 
             if strengths:
+
                 for item in strengths:
+
                     strengths_html += (
-                        f"<li>{html.escape(str(item))}</li>"
+                        f"<li>"
+                        f"{html.escape(str(item))}"
+                        f"</li>"
                     )
+
             else:
+
                 strengths_html = (
                     "<li>No strengths available</li>"
                 )
 
+
             risks_html = ""
 
             if risks:
+
                 for item in risks:
+
                     risks_html += (
-                        f"<li>{html.escape(str(item))}</li>"
+                        f"<li>"
+                        f"{html.escape(str(item))}"
+                        f"</li>"
                     )
+
             else:
+
                 risks_html = (
                     "<li>No risks available</li>"
                 )
 
+
             page = f"""
 <!DOCTYPE html>
+
 <html lang="en">
 
 <head>
@@ -557,21 +575,14 @@ async def export_analysis(
     content="width=device-width, initial-scale=1.0"
 >
 
-<title>
-    {company_name} Financial Analysis
-</title>
+<title>{company_name} Financial Analysis</title>
 
 <style>
 
 body {{
-    font-family:
-        Arial,
-        Helvetica,
-        sans-serif;
-
+    font-family: Arial, Helvetica, sans-serif;
     background: #0b1120;
     color: #e5e7eb;
-
     margin: 0;
     padding: 40px;
 }}
@@ -583,7 +594,6 @@ body {{
 
 h1 {{
     color: #38bdf8;
-    margin-bottom: 5px;
 }}
 
 .subtitle {{
@@ -598,7 +608,6 @@ h1 {{
             auto-fit,
             minmax(300px, 1fr)
         );
-
     gap: 20px;
 }}
 
@@ -606,12 +615,10 @@ h1 {{
     background: #111827;
     border: 1px solid #334155;
     border-radius: 12px;
-
     padding: 25px;
 }}
 
 .card h2 {{
-    margin-top: 0;
     color: #67e8f9;
 }}
 
@@ -629,15 +636,8 @@ h1 {{
 .metric {{
     display: flex;
     justify-content: space-between;
-
     padding: 10px 0;
-
-    border-bottom:
-        1px solid #1e293b;
-}}
-
-.metric:last-child {{
-    border-bottom: none;
+    border-bottom: 1px solid #1e293b;
 }}
 
 .label {{
@@ -650,12 +650,10 @@ h1 {{
 
 .strengths li {{
     color: #6ee7b7;
-    margin-bottom: 10px;
 }}
 
 .risks li {{
     color: #fda4af;
-    margin-bottom: 10px;
 }}
 
 .footer {{
@@ -672,9 +670,7 @@ h1 {{
 
 <div class="container">
 
-<h1>
-    {company_name}
-</h1>
+<h1>{company_name}</h1>
 
 <div class="subtitle">
     {safe_symbol} · Company Financial Analysis
@@ -683,11 +679,10 @@ h1 {{
 
 <div class="grid">
 
+
 <div class="card">
 
-<h2>
-    Health Score
-</h2>
+<h2>Health Score</h2>
 
 <div class="score">
     {html.escape(str(score))}
@@ -702,48 +697,34 @@ h1 {{
 
 <div class="card">
 
-<h2>
-    Price Information
-</h2>
+<h2>Price Information</h2>
 
 <div class="metric">
-    <span class="label">
-        Current Price
-    </span>
-
-    <span class="value">
-        {html.escape(str(price_stats.get('current_price', 'N/A')))}
-    </span>
+<span class="label">Current Price</span>
+<span class="value">
+{html.escape(str(price_stats.get('current_price', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Market Cap
-    </span>
-
-    <span class="value">
-        {html.escape(str(price_stats.get('market_cap', 'N/A')))}
-    </span>
+<span class="label">Market Cap</span>
+<span class="value">
+{html.escape(str(price_stats.get('market_cap', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        52 Week High
-    </span>
-
-    <span class="value">
-        {html.escape(str(price_stats.get('fifty_two_week_high', 'N/A')))}
-    </span>
+<span class="label">52 Week High</span>
+<span class="value">
+{html.escape(str(price_stats.get('fifty_two_week_high', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        52 Week Low
-    </span>
-
-    <span class="value">
-        {html.escape(str(price_stats.get('fifty_two_week_low', 'N/A')))}
-    </span>
+<span class="label">52 Week Low</span>
+<span class="value">
+{html.escape(str(price_stats.get('fifty_two_week_low', 'N/A')))}
+</span>
 </div>
 
 </div>
@@ -751,58 +732,41 @@ h1 {{
 
 <div class="card">
 
-<h2>
-    Valuation
-</h2>
+<h2>Valuation</h2>
 
 <div class="metric">
-    <span class="label">
-        Trailing P/E
-    </span>
-
-    <span class="value">
-        {html.escape(str(valuation.get('trailing_pe', 'N/A')))}
-    </span>
+<span class="label">Trailing P/E</span>
+<span class="value">
+{html.escape(str(valuation.get('trailing_pe', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Forward P/E
-    </span>
-
-    <span class="value">
-        {html.escape(str(valuation.get('forward_pe', 'N/A')))}
-    </span>
+<span class="label">Forward P/E</span>
+<span class="value">
+{html.escape(str(valuation.get('forward_pe', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        PEG Ratio
-    </span>
-
-    <span class="value">
-        {html.escape(str(valuation.get('peg_ratio', 'N/A')))}
-    </span>
+<span class="label">PEG Ratio</span>
+<span class="value">
+{html.escape(str(valuation.get('peg_ratio', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Price / Sales
-    </span>
-
-    <span class="value">
-        {html.escape(str(valuation.get('price_to_sales', 'N/A')))}
-    </span>
+<span class="label">Price / Sales</span>
+<span class="value">
+{html.escape(str(valuation.get('price_to_sales', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        EV / EBITDA
-    </span>
-
-    <span class="value">
-        {html.escape(str(valuation.get('ev_to_ebitda', 'N/A')))}
-    </span>
+<span class="label">EV / EBITDA</span>
+<span class="value">
+{html.escape(str(valuation.get('ev_to_ebitda', 'N/A')))}
+</span>
 </div>
 
 </div>
@@ -810,58 +774,41 @@ h1 {{
 
 <div class="card">
 
-<h2>
-    Profitability
-</h2>
+<h2>Profitability</h2>
 
 <div class="metric">
-    <span class="label">
-        Revenue
-    </span>
-
-    <span class="value">
-        {html.escape(str(profitability.get('revenue', 'N/A')))}
-    </span>
+<span class="label">Revenue</span>
+<span class="value">
+{html.escape(str(profitability.get('revenue', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Gross Margin
-    </span>
-
-    <span class="value">
-        {html.escape(str(profitability.get('gross_margin', 'N/A')))}
-    </span>
+<span class="label">Gross Margin</span>
+<span class="value">
+{html.escape(str(profitability.get('gross_margin', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Operating Margin
-    </span>
-
-    <span class="value">
-        {html.escape(str(profitability.get('operating_margin', 'N/A')))}
-    </span>
+<span class="label">Operating Margin</span>
+<span class="value">
+{html.escape(str(profitability.get('operating_margin', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Net Profit Margin
-    </span>
-
-    <span class="value">
-        {html.escape(str(profitability.get('profit_margin', 'N/A')))}
-    </span>
+<span class="label">Net Profit Margin</span>
+<span class="value">
+{html.escape(str(profitability.get('profit_margin', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Return on Equity
-    </span>
-
-    <span class="value">
-        {html.escape(str(profitability.get('return_on_equity', 'N/A')))}
-    </span>
+<span class="label">Return on Equity</span>
+<span class="value">
+{html.escape(str(profitability.get('return_on_equity', 'N/A')))}
+</span>
 </div>
 
 </div>
@@ -869,58 +816,41 @@ h1 {{
 
 <div class="card">
 
-<h2>
-    Balance Sheet
-</h2>
+<h2>Balance Sheet</h2>
 
 <div class="metric">
-    <span class="label">
-        Total Cash
-    </span>
-
-    <span class="value">
-        {html.escape(str(balance_sheet.get('total_cash', 'N/A')))}
-    </span>
+<span class="label">Total Cash</span>
+<span class="value">
+{html.escape(str(balance_sheet.get('total_cash', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Total Debt
-    </span>
-
-    <span class="value">
-        {html.escape(str(balance_sheet.get('total_debt', 'N/A')))}
-    </span>
+<span class="label">Total Debt</span>
+<span class="value">
+{html.escape(str(balance_sheet.get('total_debt', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Net Debt
-    </span>
-
-    <span class="value">
-        {html.escape(str(balance_sheet.get('net_debt', 'N/A')))}
-    </span>
+<span class="label">Net Debt</span>
+<span class="value">
+{html.escape(str(balance_sheet.get('net_debt', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Debt to Equity
-    </span>
-
-    <span class="value">
-        {html.escape(str(balance_sheet.get('debt_to_equity', 'N/A')))}
-    </span>
+<span class="label">Debt to Equity</span>
+<span class="value">
+{html.escape(str(balance_sheet.get('debt_to_equity', 'N/A')))}
+</span>
 </div>
 
 <div class="metric">
-    <span class="label">
-        Current Ratio
-    </span>
-
-    <span class="value">
-        {html.escape(str(balance_sheet.get('current_ratio', 'N/A')))}
-    </span>
+<span class="label">Current Ratio</span>
+<span class="value">
+{html.escape(str(balance_sheet.get('current_ratio', 'N/A')))}
+</span>
 </div>
 
 </div>
@@ -928,12 +858,10 @@ h1 {{
 
 <div class="card strengths">
 
-<h2>
-    Key Strengths
-</h2>
+<h2>Key Strengths</h2>
 
 <ul>
-    {strengths_html}
+{strengths_html}
 </ul>
 
 </div>
@@ -941,15 +869,14 @@ h1 {{
 
 <div class="card risks">
 
-<h2>
-    Key Risks & Watchpoints
-</h2>
+<h2>Key Risks & Watchpoints</h2>
 
 <ul>
-    {risks_html}
+{risks_html}
 </ul>
 
 </div>
+
 
 </div>
 
@@ -959,6 +886,7 @@ h1 {{
 Generated by Company Analyzer Agent
 
 </div>
+
 
 </div>
 
@@ -978,7 +906,7 @@ Generated by Company Analyzer Agent
                 }
             )
 
-        # Invalid format
+
         raise HTTPException(
             status_code=400,
             detail=(
@@ -987,8 +915,10 @@ Generated by Company Analyzer Agent
             )
         )
 
+
     except HTTPException:
         raise
+
 
     except Exception as e:
 
@@ -1000,15 +930,14 @@ Generated by Company Analyzer Agent
         )
 
 
-# --------------------------------------------------
+# ==================================================
 # CHAT WITH AGENT
-# --------------------------------------------------
+# ==================================================
 
 @app.post("/api/chat")
 async def chat_with_agent(
     req: ChatRequest
 ):
-    """Answers questions about the analyzed company."""
 
     user_id = (
         req.user_id
@@ -1019,7 +948,9 @@ async def chat_with_agent(
         user_id
     )
 
-    # Check plan permissions
+
+    # Check chat permissions
+
     if (
         not quota["features"].get(
             "has_chat",
@@ -1037,12 +968,15 @@ async def chat_with_agent(
             )
         )
 
+
     try:
 
         data = req.company_data
         score = req.score_data
 
-        # Fetch fresh data if necessary
+
+        # Fetch data if not supplied
+
         if not data or not score:
 
             res = agent.analyze(
@@ -1053,6 +987,7 @@ async def chat_with_agent(
 
             data = res["company_data"]
             score = res["scoring"]
+
 
         profile = data.get(
             "profile",
@@ -1085,7 +1020,10 @@ async def chat_with_agent(
         )
 
 
-        # Build AI context
+        # ----------------------------------------------
+        # BUILD AI CONTEXT
+        # ----------------------------------------------
+
         context = (
 
             f"Company: "
@@ -1144,9 +1082,9 @@ async def chat_with_agent(
         )
 
 
-        # --------------------------------------------------
+        # ----------------------------------------------
         # LLM RESPONSE
-        # --------------------------------------------------
+        # ----------------------------------------------
 
         llm = agent.llm
 
@@ -1162,7 +1100,9 @@ async def chat_with_agent(
                     "application/json"
             }
 
+
             payload = {
+
                 "model": llm.model,
 
                 "messages": [
@@ -1197,10 +1137,12 @@ async def chat_with_agent(
                 "temperature": 0.2
             }
 
+
             endpoint = (
                 f"{llm.base_url.rstrip('/')}"
                 f"/chat/completions"
             )
+
 
             res = requests.post(
                 endpoint,
@@ -1208,6 +1150,7 @@ async def chat_with_agent(
                 json=payload,
                 timeout=25
             )
+
 
             if res.status_code == 200:
 
@@ -1224,16 +1167,17 @@ async def chat_with_agent(
                 }
 
 
-        # --------------------------------------------------
+        # ==============================================
         # FALLBACK ANSWERS
-        # --------------------------------------------------
+        # ==============================================
 
-        q_lower = (
-            req.question.lower()
-        )
+        q_lower = req.question.lower()
 
 
+        # ----------------------------------------------
         # DEBT
+        # ----------------------------------------------
+
         if (
             "debt" in q_lower
             or "solvency" in q_lower
@@ -1245,11 +1189,13 @@ async def chat_with_agent(
                 f"for {profile.get('name')}:**\n\n"
             )
 
+
             curr = (
                 "$"
                 if profile.get("currency") == "USD"
                 else f"{profile.get('currency', '')} "
             )
+
 
             ans += (
                 f"- **Total Cash:** "
@@ -1271,6 +1217,7 @@ async def chat_with_agent(
                 f"{bs.get('current_ratio', 'N/A')}\n\n"
             )
 
+
             if (
                 bs.get("net_debt", 0)
                 and bs.get("net_debt", 0) < 0
@@ -1279,7 +1226,7 @@ async def chat_with_agent(
                 ans += (
                     "The company is in a **net cash** position "
                     "(cash reserves exceed total debt obligations), "
-                    "indicating minimal insolvency risk."
+                    "indicating relatively low balance-sheet risk."
                 )
 
             else:
@@ -1290,15 +1237,20 @@ async def chat_with_agent(
                     "against operating income."
                 )
 
+
             return {
                 "answer": ans
             }
 
 
+        # ----------------------------------------------
         # VALUATION
+        # ----------------------------------------------
+
         elif (
             "valuation" in q_lower
             or "pe" in q_lower
+            or "p/e" in q_lower
             or "expensive" in q_lower
             or "cheap" in q_lower
         ):
@@ -1308,6 +1260,7 @@ async def chat_with_agent(
                 f"{profile.get('name')} "
                 f"({profile.get('symbol')}):**\n\n"
             )
+
 
             ans += (
                 f"- **Trailing P/E:** "
@@ -1334,63 +1287,117 @@ async def chat_with_agent(
                 f"{val.get('ev_to_ebitda', 'N/A')}x\n\n"
             )
 
+
+            # FIXED VERDICT LOGIC
+            trailing_pe = (
+                val.get("trailing_pe")
+                or 0
+            )
+
+            if trailing_pe > 30:
+
+                verdict = score.get(
+                    "bear_thesis",
+                    "The valuation appears elevated relative "
+                    "to current earnings."
+                )
+
+            else:
+
+                verdict = score.get(
+                    "bull_thesis",
+                    "The valuation appears reasonable based "
+                    "on the available metrics."
+                )
+
+
             ans += (
                 f"**Verdict:** "
-                f"{score.get('bear_thesis')}"
-                f"if (val.get('trailing_pe') or 0) > 30 "
-                elif "valuation" in q_lower or "pe" in q_lower or "expensive" in q_lower or "cheap" in q_lower:
-    ans = f"**Valuation Breakdown for {profile.get('name')} ({profile.get('symbol')}):**\n\n"
-    ans += f"- **Trailing P/E:** {val.get('trailing_pe', 'N/A')}\n"
-    ans += f"-
+                f"{verdict}"
             )
+
 
             return {
                 "answer": ans
             }
 
 
+        # ----------------------------------------------
         # PROFITABILITY
+        # ----------------------------------------------
+
         elif (
             "margin" in q_lower
             or "profit" in q_lower
             or "roe" in q_lower
         ):
 
+            gross_margin = (
+                prof.get("gross_margin")
+                or 0
+            )
+
+            operating_margin = (
+                prof.get("operating_margin")
+                or 0
+            )
+
+            profit_margin = (
+                prof.get("profit_margin")
+                or 0
+            )
+
+            roe = (
+                prof.get("return_on_equity")
+                or 0
+            )
+
+
             ans = (
                 f"**Profitability & Efficiency for "
                 f"{profile.get('name')}:**\n\n"
             )
 
+
             ans += (
                 f"- **Gross Margin:** "
-                f"{prof.get('gross_margin', 0) * 100:.2f}%\n"
+                f"{gross_margin * 100:.2f}%\n"
             )
 
             ans += (
                 f"- **Operating Margin:** "
-                f"{prof.get('operating_margin', 0) * 100:.2f}%\n"
+                f"{operating_margin * 100:.2f}%\n"
             )
 
             ans += (
                 f"- **Net Profit Margin:** "
-                f"{prof.get('profit_margin', 0) * 100:.2f}%\n"
+                f"{profit_margin * 100:.2f}%\n"
             )
 
             ans += (
                 f"- **Return on Equity (ROE):** "
-                f"{prof.get('return_on_equity', 0) * 100:.2f}%\n\n"
+                f"{roe * 100:.2f}%\n\n"
             )
 
+
             ans += (
-                f"{score.get('bull_thesis')}"
+                score.get(
+                    "bull_thesis",
+                    "Profitability metrics should be evaluated "
+                    "alongside industry peers."
+                )
             )
+
 
             return {
                 "answer": ans
             }
 
 
+        # ----------------------------------------------
         # GENERAL SUMMARY
+        # ----------------------------------------------
+
         else:
 
             ans = (
@@ -1398,6 +1405,7 @@ async def chat_with_agent(
                 f"{profile.get('name')} "
                 f"({profile.get('symbol')}):**\n\n"
             )
+
 
             ans += (
                 f"- **Health Score:** "
@@ -1407,7 +1415,7 @@ async def chat_with_agent(
 
             ans += (
                 f"- **Consensus:** "
-                f"{targets.get('recommendation_key', 'N/A').upper()} "
+                f"{str(targets.get('recommendation_key', 'N/A')).upper()} "
                 f"with mean target "
                 f"{price.get('currency', '$')}"
                 f"{targets.get('target_mean_price', 'N/A')}\n"
@@ -1415,13 +1423,14 @@ async def chat_with_agent(
 
             ans += (
                 f"- **Bull Thesis:** "
-                f"{score.get('bull_thesis')}\n"
+                f"{score.get('bull_thesis', 'N/A')}\n"
             )
 
             ans += (
                 f"- **Bear Thesis:** "
-                f"{score.get('bear_thesis')}\n"
+                f"{score.get('bear_thesis', 'N/A')}\n"
             )
+
 
             return {
                 "answer": ans
@@ -1436,9 +1445,9 @@ async def chat_with_agent(
         )
 
 
-# --------------------------------------------------
+# ==================================================
 # WEBSITE ROOT
-# --------------------------------------------------
+# ==================================================
 
 @app.get("/")
 async def get_index():
@@ -1447,6 +1456,7 @@ async def get_index():
         STATIC_DIR,
         "index.html"
     )
+
 
     if os.path.exists(index_file):
 
@@ -1460,17 +1470,20 @@ async def get_index():
                 content=f.read()
             )
 
+
     return HTMLResponse(
         "<h1>Company Analyzer Web UI Loading...</h1>"
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # STATIC FILES
-# --------------------------------------------------
+# ==================================================
 
 app.mount(
     "/static",
-    StaticFiles(directory=STATIC_DIR),
+    StaticFiles(
+        directory=STATIC_DIR
+    ),
     name="static"
 )
