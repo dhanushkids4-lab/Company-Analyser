@@ -1,4 +1,3 @@
-import math
 import requests
 import yfinance as yf
 
@@ -6,73 +5,12 @@ from typing import Dict, Any, Optional
 
 
 class CompanyDataFetcher:
-    """Fetches company market data and financial statements."""
+    """Fetches market data and financial statements with fallbacks."""
 
     @staticmethod
-    def safe_float(value):
-        """Convert values to float safely."""
-        try:
-            if value is None:
-                return None
-
-            value = float(value)
-
-            if math.isnan(value):
-                return None
-
-            return value
-        except Exception:
-            return None
-
-    @staticmethod
-    def safe_divide(a, b):
-        """Safely divide two numbers."""
-        try:
-            if a is None or b is None:
-                return None
-
-            if b == 0:
-                return None
-
-            return a / b
-        except Exception:
-            return None
-
-    @staticmethod
-    def get_statement_value(statement, row_names, column=None):
+    def resolve_ticker(query: str) -> Optional[Dict[str, str]]:
         """
-        Safely get a value from a Yahoo Finance statement.
-        Tries multiple possible row names.
-        """
-
-        if statement is None or statement.empty:
-            return None
-
-        if isinstance(row_names, str):
-            row_names = [row_names]
-
-        for row_name in row_names:
-            if row_name in statement.index:
-                try:
-                    if column is None:
-                        if len(statement.columns) == 0:
-                            continue
-
-                        value = statement.loc[row_name, statement.columns[0]]
-                    else:
-                        value = statement.loc[row_name, column]
-
-                    return CompanyDataFetcher.safe_float(value)
-
-                except Exception:
-                    pass
-
-        return None
-
-    @staticmethod
-    def resolve_ticker(query: str) -> Dict[str, str]:
-        """
-        Resolves a company name or ticker to a Yahoo Finance symbol.
+        Resolves a company name or ticker search query.
         """
 
         cleaned = query.strip()
@@ -87,19 +25,20 @@ class CompanyDataFetcher:
             headers = {
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+                    "AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/120 Safari/537.36"
                 )
             }
 
-            response = requests.get(
+            res = requests.get(
                 url,
                 headers=headers,
                 timeout=10
             )
 
-            if response.status_code == 200:
+            if res.status_code == 200:
+                data = res.json()
 
-                data = response.json()
                 quotes = data.get("quotes", [])
 
                 equity_quotes = [
@@ -114,7 +53,6 @@ class CompanyDataFetcher:
                 )
 
                 if target and target.get("symbol"):
-
                     return {
                         "symbol": target.get("symbol"),
                         "name": (
@@ -142,15 +80,33 @@ class CompanyDataFetcher:
             "quoteType": "EQUITY"
         }
 
+    @staticmethod
+    def _safe_get(df, row_name, column):
+        """
+        Safely extract a value from a financial statement.
+        """
+
+        try:
+            if (
+                df is not None
+                and not df.empty
+                and row_name in df.index
+            ):
+                value = df.loc[row_name, column]
+
+                if value is not None:
+                    return float(value)
+
+        except Exception:
+            pass
+
+        return None
+
     @classmethod
     def fetch_company_data(
         cls,
         symbol_or_name: str
     ) -> Dict[str, Any]:
-
-        # --------------------------------------------------
-        # 1. Resolve company symbol
-        # --------------------------------------------------
 
         resolved = cls.resolve_ticker(symbol_or_name)
 
@@ -162,362 +118,229 @@ class CompanyDataFetcher:
         ticker = yf.Ticker(symbol)
 
         # --------------------------------------------------
-        # 2. Optional Yahoo info
+        # FAST INFO
         # --------------------------------------------------
 
-        info = {}
+        try:
+            fast_info = dict(ticker.fast_info)
+        except Exception as e:
+            print(f"Fast info error for {symbol}: {e}")
+            fast_info = {}
+
+        # --------------------------------------------------
+        # REGULAR INFO
+        # Optional because Yahoo may block this endpoint
+        # --------------------------------------------------
 
         try:
             info = ticker.info or {}
         except Exception as e:
             print(
-                f"Yahoo Finance info unavailable for "
-                f"{symbol}: {e}"
+                f"Yahoo Finance info error for {symbol}: {e}"
             )
+            info = {}
 
         # --------------------------------------------------
-        # 3. Fast market information
+        # PRICE HISTORY FALLBACK
         # --------------------------------------------------
-
-        fast_info = {}
 
         try:
-            fast_info = dict(ticker.fast_info)
-        except Exception as e:
-            print(
-                f"Fast info unavailable for "
-                f"{symbol}: {e}"
-            )
-
-        # --------------------------------------------------
-        # 4. Price history fallback
-        # --------------------------------------------------
-
-        history = None
-
-        try:
-            history = ticker.history(
+            price_history = ticker.history(
                 period="1y",
-                interval="1d",
                 auto_adjust=False
             )
         except Exception as e:
-            print(
-                f"Price history unavailable for "
-                f"{symbol}: {e}"
-            )
+            print(f"History error for {symbol}: {e}")
+            price_history = None
 
         history_price = None
-        history_high = None
-        history_low = None
+        fifty_two_week_high = None
+        fifty_two_week_low = None
 
         try:
-            if history is not None and not history.empty:
+            if (
+                price_history is not None
+                and not price_history.empty
+            ):
+                history_price = float(
+                    price_history["Close"].iloc[-1]
+                )
 
-                close_series = history["Close"].dropna()
+                fifty_two_week_high = float(
+                    price_history["High"].max()
+                )
 
-                if not close_series.empty:
-                    history_price = cls.safe_float(
-                        close_series.iloc[-1]
-                    )
-
-                high_series = history["High"].dropna()
-
-                if not high_series.empty:
-                    history_high = cls.safe_float(
-                        high_series.max()
-                    )
-
-                low_series = history["Low"].dropna()
-
-                if not low_series.empty:
-                    history_low = cls.safe_float(
-                        low_series.min()
-                    )
+                fifty_two_week_low = float(
+                    price_history["Low"].min()
+                )
 
         except Exception:
             pass
 
         # --------------------------------------------------
-        # 5. Financial statements
+        # FINANCIAL STATEMENTS
         # --------------------------------------------------
-
-        income_stmt = None
-        balance_sheet_stmt = None
-        cashflow_stmt = None
 
         try:
             income_stmt = ticker.income_stmt
         except Exception as e:
-            print(
-                f"Income statement unavailable for "
-                f"{symbol}: {e}"
-            )
+            print(f"Income statement error: {e}")
+            income_stmt = None
 
         try:
             balance_sheet_stmt = ticker.balance_sheet
         except Exception as e:
-            print(
-                f"Balance sheet unavailable for "
-                f"{symbol}: {e}"
-            )
+            print(f"Balance sheet error: {e}")
+            balance_sheet_stmt = None
 
         try:
             cashflow_stmt = ticker.cashflow
         except Exception as e:
-            print(
-                f"Cash flow unavailable for "
-                f"{symbol}: {e}"
-            )
+            print(f"Cash flow error: {e}")
+            cashflow_stmt = None
 
         # --------------------------------------------------
-        # 6. Extract Income Statement values
+        # LATEST FINANCIAL PERIOD
         # --------------------------------------------------
 
-        revenue = cls.get_statement_value(
-            income_stmt,
-            [
+        latest_income_col = None
+
+        try:
+            if (
+                income_stmt is not None
+                and not income_stmt.empty
+            ):
+                latest_income_col = income_stmt.columns[0]
+        except Exception:
+            pass
+
+        latest_balance_col = None
+
+        try:
+            if (
+                balance_sheet_stmt is not None
+                and not balance_sheet_stmt.empty
+            ):
+                latest_balance_col = (
+                    balance_sheet_stmt.columns[0]
+                )
+        except Exception:
+            pass
+
+        latest_cashflow_col = None
+
+        try:
+            if (
+                cashflow_stmt is not None
+                and not cashflow_stmt.empty
+            ):
+                latest_cashflow_col = (
+                    cashflow_stmt.columns[0]
+                )
+        except Exception:
+            pass
+
+        # --------------------------------------------------
+        # INCOME STATEMENT VALUES
+        # --------------------------------------------------
+
+        revenue = None
+        gross_profit = None
+        operating_income = None
+        net_income = None
+
+        if latest_income_col is not None:
+
+            revenue = cls._safe_get(
+                income_stmt,
                 "Total Revenue",
-                "Operating Revenue"
-            ]
-        )
+                latest_income_col
+            )
 
-        gross_profit = cls.get_statement_value(
-            income_stmt,
-            [
-                "Gross Profit"
-            ]
-        )
+            gross_profit = cls._safe_get(
+                income_stmt,
+                "Gross Profit",
+                latest_income_col
+            )
 
-        operating_income = cls.get_statement_value(
-            income_stmt,
-            [
+            operating_income = cls._safe_get(
+                income_stmt,
                 "Operating Income",
-                "EBIT"
-            ]
-        )
+                latest_income_col
+            )
 
-        net_income = cls.get_statement_value(
-            income_stmt,
-            [
+            net_income = cls._safe_get(
+                income_stmt,
                 "Net Income",
-                "Net Income Common Stockholders"
-            ]
+                latest_income_col
+            )
+
+        gross_margin = (
+            gross_profit / revenue
+            if gross_profit is not None
+            and revenue not in (None, 0)
+            else info.get("grossMargins")
         )
 
-        ebitda = cls.get_statement_value(
-            income_stmt,
-            [
-                "EBITDA",
-                "Normalized EBITDA"
-            ]
+        operating_margin = (
+            operating_income / revenue
+            if operating_income is not None
+            and revenue not in (None, 0)
+            else info.get("operatingMargins")
+        )
+
+        profit_margin = (
+            net_income / revenue
+            if net_income is not None
+            and revenue not in (None, 0)
+            else info.get("profitMargins")
         )
 
         # --------------------------------------------------
-        # 7. Extract Balance Sheet values
+        # BALANCE SHEET VALUES
         # --------------------------------------------------
 
-        total_cash = cls.get_statement_value(
-            balance_sheet_stmt,
-            [
-                "Cash Cash Equivalents And Short Term Investments",
-                "Cash And Cash Equivalents",
-                "Cash Financial"
-            ]
-        )
+        total_cash = None
+        total_debt = None
 
-        total_debt = cls.get_statement_value(
-            balance_sheet_stmt,
-            [
-                "Total Debt",
-                "Long Term Debt",
-                "Current Debt And Capital Lease Obligation"
-            ]
-        )
+        if latest_balance_col is not None:
 
-        total_assets = cls.get_statement_value(
-            balance_sheet_stmt,
-            [
-                "Total Assets"
-            ]
-        )
-
-        stockholders_equity = cls.get_statement_value(
-            balance_sheet_stmt,
-            [
-                "Stockholders Equity",
-                "Total Equity Gross Minority Interest"
-            ]
-        )
-
-        current_assets = cls.get_statement_value(
-            balance_sheet_stmt,
-            [
-                "Current Assets",
-                "Total Current Assets"
-            ]
-        )
-
-        current_liabilities = cls.get_statement_value(
-            balance_sheet_stmt,
-            [
-                "Current Liabilities",
-                "Total Current Liabilities"
-            ]
-        )
-
-        # --------------------------------------------------
-        # 8. Extract Cash Flow values
-        # --------------------------------------------------
-
-        operating_cash_flow = cls.get_statement_value(
-            cashflow_stmt,
-            [
-                "Operating Cash Flow",
-                "Total Cash From Operating Activities"
-            ]
-        )
-
-        free_cash_flow = cls.get_statement_value(
-            cashflow_stmt,
-            [
-                "Free Cash Flow"
-            ]
-        )
-
-        capital_expenditure = cls.get_statement_value(
-            cashflow_stmt,
-            [
-                "Capital Expenditure",
-                "Capital Expenditures"
-            ]
-        )
-
-        # Calculate FCF if Yahoo does not provide it
-
-        if (
-            free_cash_flow is None
-            and operating_cash_flow is not None
-            and capital_expenditure is not None
-        ):
-            free_cash_flow = (
-                operating_cash_flow
-                + capital_expenditure
+            total_cash = (
+                cls._safe_get(
+                    balance_sheet_stmt,
+                    "Cash Cash Equivalents And Short Term Investments",
+                    latest_balance_col
+                )
+                or cls._safe_get(
+                    balance_sheet_stmt,
+                    "Cash And Cash Equivalents",
+                    latest_balance_col
+                )
+                or cls._safe_get(
+                    balance_sheet_stmt,
+                    "Cash Financial",
+                    latest_balance_col
+                )
             )
 
-        # --------------------------------------------------
-        # 9. Market price
-        # --------------------------------------------------
-
-        current_price = (
-            cls.safe_float(
-                fast_info.get("lastPrice")
+            total_debt = (
+                cls._safe_get(
+                    balance_sheet_stmt,
+                    "Total Debt",
+                    latest_balance_col
+                )
+                or cls._safe_get(
+                    balance_sheet_stmt,
+                    "Long Term Debt",
+                    latest_balance_col
+                )
             )
-            or cls.safe_float(
-                fast_info.get("last_price")
-            )
-            or cls.safe_float(
-                info.get("currentPrice")
-            )
-            or cls.safe_float(
-                info.get("regularMarketPrice")
-            )
-            or history_price
-        )
 
-        fifty_two_week_high = (
-            cls.safe_float(
-                fast_info.get("yearHigh")
-            )
-            or cls.safe_float(
-                fast_info.get("year_high")
-            )
-            or cls.safe_float(
-                info.get("fiftyTwoWeekHigh")
-            )
-            or history_high
-        )
+        if total_cash is None:
+            total_cash = info.get("totalCash")
 
-        fifty_two_week_low = (
-            cls.safe_float(
-                fast_info.get("yearLow")
-            )
-            or cls.safe_float(
-                fast_info.get("year_low")
-            )
-            or cls.safe_float(
-                info.get("fiftyTwoWeekLow")
-            )
-            or history_low
-        )
-
-        market_cap = (
-            cls.safe_float(
-                fast_info.get("marketCap")
-            )
-            or cls.safe_float(
-                fast_info.get("market_cap")
-            )
-            or cls.safe_float(
-                info.get("marketCap")
-            )
-        )
-
-        shares_outstanding = (
-            cls.safe_float(
-                fast_info.get("shares")
-            )
-            or cls.safe_float(
-                info.get("sharesOutstanding")
-            )
-        )
-
-        # --------------------------------------------------
-        # 10. Calculated financial ratios
-        # --------------------------------------------------
-
-        gross_margin = cls.safe_divide(
-            gross_profit,
-            revenue
-        )
-
-        operating_margin = cls.safe_divide(
-            operating_income,
-            revenue
-        )
-
-        profit_margin = cls.safe_divide(
-            net_income,
-            revenue
-        )
-
-        roe = cls.safe_divide(
-            net_income,
-            stockholders_equity
-        )
-
-        roa = cls.safe_divide(
-            net_income,
-            total_assets
-        )
-
-        current_ratio = cls.safe_divide(
-            current_assets,
-            current_liabilities
-        )
-
-        debt_to_equity = cls.safe_divide(
-            total_debt,
-            stockholders_equity
-        )
-
-        if debt_to_equity is not None:
-            debt_to_equity *= 100
-
-        fcf_margin = cls.safe_divide(
-            free_cash_flow,
-            revenue
-        )
+        if total_debt is None:
+            total_debt = info.get("totalDebt")
 
         net_debt = None
 
@@ -528,11 +351,67 @@ class CompanyDataFetcher:
             net_debt = total_debt - total_cash
 
         # --------------------------------------------------
-        # 11. Profile
+        # CASH FLOW VALUES
+        # --------------------------------------------------
+
+        operating_cash_flow = None
+        free_cash_flow = None
+
+        if latest_cashflow_col is not None:
+
+            operating_cash_flow = (
+                cls._safe_get(
+                    cashflow_stmt,
+                    "Operating Cash Flow",
+                    latest_cashflow_col
+                )
+            )
+
+            free_cash_flow = (
+                cls._safe_get(
+                    cashflow_stmt,
+                    "Free Cash Flow",
+                    latest_cashflow_col
+                )
+            )
+
+        if operating_cash_flow is None:
+            operating_cash_flow = info.get(
+                "operatingCashflow"
+            )
+
+        if free_cash_flow is None:
+            free_cash_flow = info.get(
+                "freeCashflow"
+            )
+
+        fcf_margin = None
+
+        if (
+            free_cash_flow is not None
+            and revenue not in (None, 0)
+        ):
+            fcf_margin = free_cash_flow / revenue
+
+        # --------------------------------------------------
+        # PRICE
+        # --------------------------------------------------
+
+        current_price = (
+            fast_info.get("lastPrice")
+            or fast_info.get("last_price")
+            or fast_info.get("regularMarketPrice")
+            or info.get("currentPrice")
+            or info.get("regularMarketPrice")
+            or history_price
+            or info.get("previousClose")
+        )
+
+        # --------------------------------------------------
+        # PROFILE
         # --------------------------------------------------
 
         profile = {
-
             "symbol": symbol,
 
             "name": (
@@ -567,8 +446,8 @@ class CompanyDataFetcher:
             ),
 
             "currency": (
-                info.get("currency")
-                or fast_info.get("currency")
+                fast_info.get("currency")
+                or info.get("currency")
                 or "USD"
             ),
 
@@ -585,7 +464,7 @@ class CompanyDataFetcher:
         }
 
         # --------------------------------------------------
-        # 12. Price statistics
+        # PRICE STATS
         # --------------------------------------------------
 
         price_stats = {
@@ -594,32 +473,44 @@ class CompanyDataFetcher:
 
             "currency": profile["currency"],
 
-            "market_cap": market_cap,
+            "market_cap": (
+                fast_info.get("marketCap")
+                or fast_info.get("market_cap")
+                or info.get("marketCap")
+            ),
 
             "enterprise_value": info.get(
                 "enterpriseValue"
             ),
 
             "fifty_two_week_high": (
-                fifty_two_week_high
+                fast_info.get("yearHigh")
+                or fast_info.get("year_high")
+                or info.get("fiftyTwoWeekHigh")
+                or fifty_two_week_high
             ),
 
             "fifty_two_week_low": (
-                fifty_two_week_low
+                fast_info.get("yearLow")
+                or fast_info.get("year_low")
+                or info.get("fiftyTwoWeekLow")
+                or fifty_two_week_low
             ),
 
-            "fifty_day_average": (
-                info.get("fiftyDayAverage")
+            "fifty_day_average": info.get(
+                "fiftyDayAverage"
             ),
 
-            "two_hundred_day_average": (
-                info.get("twoHundredDayAverage")
+            "two_hundred_day_average": info.get(
+                "twoHundredDayAverage"
             ),
 
             "beta": info.get("beta"),
 
             "shares_outstanding": (
-                shares_outstanding
+                fast_info.get("shares")
+                or fast_info.get("shares_outstanding")
+                or info.get("sharesOutstanding")
             ),
 
             "float_shares": info.get(
@@ -632,7 +523,7 @@ class CompanyDataFetcher:
         }
 
         # --------------------------------------------------
-        # 13. Valuation
+        # VALUATION
         # --------------------------------------------------
 
         valuation = {
@@ -671,7 +562,7 @@ class CompanyDataFetcher:
         }
 
         # --------------------------------------------------
-        # 14. Profitability
+        # PROFITABILITY
         # --------------------------------------------------
 
         profitability = {
@@ -681,90 +572,51 @@ class CompanyDataFetcher:
                 or info.get("totalRevenue")
             ),
 
-            "revenue_growth_yoy": (
-                info.get("revenueGrowth")
+            "revenue_growth_yoy": info.get(
+                "revenueGrowth"
             ),
 
-            "gross_margin": (
-                gross_margin
-                if gross_margin is not None
-                else info.get("grossMargins")
+            "gross_margin": gross_margin,
+
+            "operating_margin": operating_margin,
+
+            "profit_margin": profit_margin,
+
+            "ebitda": info.get(
+                "ebitda"
             ),
 
-            "operating_margin": (
-                operating_margin
-                if operating_margin is not None
-                else info.get(
-                    "operatingMargins"
-                )
+            "return_on_equity": info.get(
+                "returnOnEquity"
             ),
 
-            "profit_margin": (
-                profit_margin
-                if profit_margin is not None
-                else info.get(
-                    "profitMargins"
-                )
+            "return_on_assets": info.get(
+                "returnOnAssets"
             ),
 
-            "ebitda": (
-                ebitda
-                or info.get("ebitda")
-            ),
-
-            "return_on_equity": (
-                roe
-                if roe is not None
-                else info.get(
-                    "returnOnEquity"
-                )
-            ),
-
-            "return_on_assets": (
-                roa
-                if roa is not None
-                else info.get(
-                    "returnOnAssets"
-                )
-            ),
-
-            "earnings_growth_yoy": (
-                info.get("earningsGrowth")
+            "earnings_growth_yoy": info.get(
+                "earningsGrowth"
             )
         }
 
         # --------------------------------------------------
-        # 15. Balance Sheet
+        # BALANCE SHEET
         # --------------------------------------------------
 
         balance_sheet = {
 
-            "total_cash": (
-                total_cash
-                or info.get("totalCash")
-            ),
+            "total_cash": total_cash,
 
-            "total_debt": (
-                total_debt
-                or info.get("totalDebt")
-            ),
+            "total_debt": total_debt,
 
             "net_debt": net_debt,
 
-            "debt_to_equity": (
-                debt_to_equity
-                if debt_to_equity is not None
-                else info.get(
-                    "debtToEquity"
-                )
+            "debt_to_equity": info.get(
+                "debtToEquity"
             ),
 
-            "current_ratio": (
-                current_ratio
-                if current_ratio is not None
-                else info.get(
-                    "currentRatio"
-                )
+            "current_ratio": info.get(
+                "currentRatio"
             ),
 
             "quick_ratio": info.get(
@@ -773,30 +625,24 @@ class CompanyDataFetcher:
         }
 
         # --------------------------------------------------
-        # 16. Cash Flow
+        # CASH FLOW
         # --------------------------------------------------
 
         cash_flow = {
 
             "operating_cash_flow": (
                 operating_cash_flow
-                or info.get(
-                    "operatingCashflow"
-                )
             ),
 
             "free_cash_flow": (
                 free_cash_flow
-                or info.get(
-                    "freeCashflow"
-                )
             ),
 
             "fcf_margin": fcf_margin
         }
 
         # --------------------------------------------------
-        # 17. Dividends
+        # DIVIDENDS
         # --------------------------------------------------
 
         dividends = {
@@ -813,14 +659,13 @@ class CompanyDataFetcher:
                 "payoutRatio"
             ),
 
-            "five_year_avg_dividend_yield":
-                info.get(
-                    "fiveYearAvgDividendYield"
-                )
+            "five_year_avg_dividend_yield": info.get(
+                "fiveYearAvgDividendYield"
+            )
         }
 
         # --------------------------------------------------
-        # 18. Analyst targets
+        # ANALYST TARGETS
         # --------------------------------------------------
 
         analyst_targets = {
@@ -851,10 +696,10 @@ class CompanyDataFetcher:
         }
 
         # --------------------------------------------------
-        # 19. Historical financial trends
+        # HISTORICAL FINANCIAL DATA
         # --------------------------------------------------
 
-        financial_history = []
+        history = []
 
         try:
 
@@ -863,57 +708,56 @@ class CompanyDataFetcher:
                 and not income_stmt.empty
             ):
 
-                for column in (
-                    income_stmt.columns[:4]
-                ):
+                for col in income_stmt.columns[:4]:
 
                     year_str = (
-                        str(column.year)
-                        if hasattr(column, "year")
-                        else str(column)[:10]
+                        str(col.year)
+                        if hasattr(col, "year")
+                        else str(col)[:10]
                     )
 
-                    financial_history.append({
+                    rev = cls._safe_get(
+                        income_stmt,
+                        "Total Revenue",
+                        col
+                    )
+
+                    gp = cls._safe_get(
+                        income_stmt,
+                        "Gross Profit",
+                        col
+                    )
+
+                    op = cls._safe_get(
+                        income_stmt,
+                        "Operating Income",
+                        col
+                    )
+
+                    ni = cls._safe_get(
+                        income_stmt,
+                        "Net Income",
+                        col
+                    )
+
+                    history.append({
 
                         "period": year_str,
 
-                        "revenue":
-                            cls.get_statement_value(
-                                income_stmt,
-                                "Total Revenue",
-                                column
-                            ),
+                        "revenue": rev,
 
-                        "gross_profit":
-                            cls.get_statement_value(
-                                income_stmt,
-                                "Gross Profit",
-                                column
-                            ),
+                        "gross_profit": gp,
 
-                        "operating_income":
-                            cls.get_statement_value(
-                                income_stmt,
-                                "Operating Income",
-                                column
-                            ),
+                        "operating_income": op,
 
-                        "net_income":
-                            cls.get_statement_value(
-                                income_stmt,
-                                "Net Income",
-                                column
-                            )
+                        "net_income": ni
                     })
 
         except Exception as e:
-
-            print(
-                f"Historical extraction error: {e}"
-            )
+            print(f"Historical data error: {e}")
 
         # --------------------------------------------------
-        # 20. Return everything
+        # FINAL RESPONSE
         # --------------------------------------------------
 
         return {
@@ -934,5 +778,5 @@ class CompanyDataFetcher:
 
             "analyst_targets": analyst_targets,
 
-            "history": financial_history
+            "history": history
         }
