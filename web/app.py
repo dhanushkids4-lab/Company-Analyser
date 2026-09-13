@@ -1336,7 +1336,7 @@ async def chat_with_agent(
 
             ans += (
                 f"**Verdict:** "
-                f"{score.get('bear_thesis') "
+                f"{score.get('bear_thesis')}"
                 f"if (val.get('trailing_pe') or 0) > 30 "
                 f"else score.get('bull_thesis')}"
             )
